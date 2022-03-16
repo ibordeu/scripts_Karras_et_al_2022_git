@@ -7,7 +7,7 @@
 % described in the "Model fits" section.
 %
 % In this script we generate:
-% Figure 2F, Supplementary Figures 5b-5f, and Tables 3-4.
+% Figure 2F, Supplementary Figures 5b-5f, and Table S4.
 %%-----------------------------------------------------------------------%%
 close all; clear all; clc;
 %-DATA AND PARAMETERS-----------------------------------------------------%
@@ -27,8 +27,8 @@ show_plots = 1;
 %- SCRIPT ----------------------------------------------------------------%
 % preallocate result table of parameters
 variables = {'sample','channel','t0','num_clones','num_singlets',...
-    'size_threshold','p0p','nbar','nbar_p','r','sigma','Delta_s',...
-    'Delta_p','fsp','fs','predicted_tumour_volume','empirical_tumour_expansion','R2','S'};
+    'size_threshold','p0','nbar','nbar_p','r','sigma','Delta_s',...
+    'Delta_p','fs','predicted_tumour_volume','empirical_tumour_expansion','R2','S'};
 result_table = array2table(zeros(length(samples)*length(channels),...
     length(variables)),'VariableNames',variables);
 channel_labels = {'RFP','YFP'};
@@ -53,14 +53,14 @@ for nsample = samples
         % Optimization step to find the bet size_threshold in order to fit
         % the long term exponential decay
         initial_size_threshold = 20; % initial guess
-        size_threshold_min = minimize(sample_clones,ignore_singlets);
+        size_threshold_min = minimize(sample_clones);
         % Fit the biexponential model, Eq. (10), using the  value for
         % size_threshold found in the previous step, and extract the
-        % parameters: nbar,nbar_p and p0p
-        [gof,nbar,nbar_p,p0p] = fit_biexponential(sample_clones,size_threshold_min,ignore_singlets);
+        % parameters: nbar,nbar_p and p0
+        [gof,nbar,nbar_p,p0] = fit_biexponential(sample_clones,size_threshold_min);
         % obtain the empirical and theoretical cdfs
         [emp_cdf,bincents] = empirical_cdf(sample_clones,show_plots,nchannel);
-        Cn = theoretical_cdf(nbar,nbar_p,p0p,ignore_singlets,show_plots);
+        Cn = theoretical_cdf(nbar,nbar_p,p0,show_plots);
         % compute the goodness-of-fit measures: R2,S
         [R2,S] = gof_estimation(bincents,emp_cdf,Cn);
         
@@ -77,8 +77,8 @@ for nsample = samples
         result_table.num_singlets(counter) = num_singlets;
         % optimal clone size threshold
         result_table.size_threshold(counter) = size_threshold_min;
-        % fitted parameters p0p = p0/(1-s(t)), nbar and nbar_p
-        result_table.p0p(counter) = p0p;
+        % fitted parameters p0, nbar and nbar_p
+        result_table.p0(counter) = p0;
         result_table.nbar(counter) = nbar;
         result_table.nbar_p(counter) = nbar_p;
         % we now estimate other model parameters based on the theoretical
@@ -96,9 +96,7 @@ for nsample = samples
         Delta_p = log(nbar_p)/t0;
         result_table.Delta_p(counter) = Delta_p;
         % fraction fo induces stem cells
-        fsp = p0p/factor;
-        result_table.fsp(counter) = fsp;
-        fs = fsp*(1-num_singlets/num_clones); % from fsp = fs/(1-S(t)) 
+        fs = p0/factor;
         result_table.fs(counter) = fs;
         % tumor volume, Eq. (11)
         V = tumour_volume_SP_model(r,nbar,nbar_p,fs);
@@ -128,16 +126,16 @@ end
 save('result_table.mat','result_table')
 disp('Data saved as result_table.mat')
 %% FUNCTIONS
-function [size_threshold_min, gof] = minimize(clone_sizes,ignore_singlets)
+function [size_threshold_min, gof] = minimize(clone_sizes)
 % Input:
 % clone_sizes: list of clone sizes for a given sample
 % find optimal size_threshold_min in the range [1,50] cells. This range was
 % chosen as it was obseved than in all samples the transition between the
 % two exponential regimes lied within this range.
-[size_threshold_min, gof] = fminbnd(@(size_threshold) fit_biexponential(clone_sizes,size_threshold,ignore_singlets),1,50);
+[size_threshold_min, gof] = fminbnd(@(size_threshold) fit_biexponential(clone_sizes,size_threshold),1,50);
 end
 
-function [gof,nbar,nbar_p,p0p,bincents] = fit_biexponential(clone_sizes,size_threshold,ignore_singlets)
+function [gof,nbar,nbar_p,p0,bincents] = fit_biexponential(clone_sizes,size_threshold)
     % ---------------------------------------------------------------------
     % This function fits the bi-exponential CDF function to the empirical
     % data as described in the "Model fits" section of the supplementary
@@ -167,8 +165,8 @@ function [gof,nbar,nbar_p,p0p,bincents] = fit_biexponential(clone_sizes,size_thr
     % ---------------------------------------------------------------------
     % extract nbar
     nbar = c_long(2);
-    % extract the composite parameter p0p=fs*(2r-1)/r) from the n=0 intersect 
-    p0p = c_long(1);
+    % extract the composite parameter p0=fs*(2r-1)/r) from the n=0 intersect 
+    p0 = c_long(1);
     % ---------------------------------------------------------------------
     % 2) Substract the long-term dependence from the empirical CDF and
     % estimate the short term decay
@@ -192,7 +190,7 @@ function [gof,nbar,nbar_p,p0p,bincents] = fit_biexponential(clone_sizes,size_thr
     % ---------------------------------------------------------------------
     % evaluate the theoretical cdf, and extract the goodness-of-fit
     % parameter S.
-    Cn = theoretical_cdf(nbar,nbar_p,p0p,ignore_singlets,0);
+    Cn = theoretical_cdf(nbar,nbar_p,p0,0);
     [~,S] = gof_estimation(bincents,emp_cdf,Cn);
     gof = S;
 end 
@@ -208,21 +206,16 @@ function [R2,S] = gof_estimation(bincents,emp_cdf,theo_cdf)
     S = sqrt(Sres/length(bincents));
 end
 
-function Cn = theoretical_cdf(nbar,nbar_p,p0p,ignore_singlets,show_plot)
+function Cn = theoretical_cdf(nbar,nbar_p,p0,show_plot)
     % Here we contuct the theoretical cdf based on the input parameters
-    % nbar, nbar_p and p0p.
-    % If ignore_singlets == 1, then T{n<2} is removed from Tn(t).
+    % nbar, nbar_p and p0.
     % provide range of clone sizes to evaluate
     bincents = 0.5:1:10^5;
     % compute T(n), Eq. (10), and normalize
-    Tn = @(xi) p0p*exp(-xi./nbar)./nbar+(1-p0p)*exp(-xi./nbar_p)./nbar_p;
-    if ignore_singlets == 1
-        Tn_list = Tn(bincents)/(1-sum(Tn(0:1)));
-    else
-        Tn_list = Tn(bincents);
-    end
+    Tn = @(xi) p0*exp(-xi./nbar)./nbar+(1-p0)*exp(-xi./nbar_p)./nbar_p;
+    Tn_norm = Tn(bincents)./sum(Tn(bincents));
     % compute cdf, C(n):
-    Cn = 1 - cumsum(Tn_list)./sum(Tn_list);
+    Cn = 1 - cumsum(Tn_norm);
     if show_plot == 1
        plot(bincents,Cn,'--k','HandleVisibility','off') 
     end
@@ -268,3 +261,5 @@ function V = tumour_volume_SP_model(r,nbar,nbar_p,fs)
 % fixed value of r, Eq. (11):
 V = fs*(2*r-1)/r*nbar + (1-(2*r-1)/r*fs)*nbar_p;
 end
+
+

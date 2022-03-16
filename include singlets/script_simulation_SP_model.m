@@ -1,6 +1,6 @@
 %%-----------------------------------------------------------------------%%
 % This script loads the clone sizes and output from script_biexponential_fit
-% (summarised in Table 4), and uses those parameters to run stochastic 
+% (summarised in Table 3), and uses those parameters to run stochastic 
 % simulations of the two-compartment SP model. 
 % This script produces plots comparing the empirical cumulative distribution 
 % of clone sizes with the obtained from the numerical results (Extended data
@@ -40,7 +40,7 @@ for nsample = samples
         r = params.r;
         sigma = params.sigma;
         Delta_p =  params.Delta_p;
-        fsp =  params.fsp;
+        fs =  params.fs;
         % Run numerical simulations and plot the result for each channel in
         % a separate subplot
         subplot(1,length(channels),nchannel)
@@ -49,9 +49,13 @@ for nsample = samples
         % run n_realis realizations
         for n = 1:n_realis
             % each realisation simulates nclones clones
-            clone_info = function_SP_model(sigma,r,Delta_p,nclones,fsp,t0,N_max,ignore_singlets);
+            clone_info = function_SP_model(sigma,r,Delta_p,nclones,fs,t0,N_max);
             % clone size = number of S cells + number of P cells in clone
             sim_clones_size = clone_info.numS + clone_info.numP;
+            % remove singlets if ignore_singlets == 1
+            if ignore_singlets == 1
+                sim_clones_size(sim_clones_size == 1) = [];
+            end
             % construct cdf for every realisation
             [~,cumNsim,bincents] = cumulativeProb(sim_clones_size,binedges);
             cumNsims(n,:) = cumNsim;
@@ -59,8 +63,8 @@ for nsample = samples
             all_sim_clone_sizes = [all_sim_clone_sizes;sim_clones_size]; 
         end
         % plot numerical cdf (average +/- SD) 
-        cdfMean = mean(cumNsims,1); cdfspD = std(cumNsims,[],1);
-        errorbar(bincents,cdfMean,cdfspD,'Color',[0.9 0.9 0.9],'HandleVisibility','off')
+        cdfMean = mean(cumNsims,1); cdfSD = std(cumNsims,[],1);
+        errorbar(bincents,cdfMean,cdfSD,'Color',[0.9 0.9 0.9],'HandleVisibility','off')
         hold on
         plot(bincents,mean(cumNsims,1),'-','Color',[0.7 0.7 0.7])
         % plot empirical cdf
@@ -88,7 +92,7 @@ result_table.pvalues = pvalues;
 save('result_table.mat','result_table')
 
 %% Functions
-function clone_info = function_SP_model(sigma,r,Delta_p,nclones,prop_s,t_max,N_max,ignore_singlets)
+function clone_info = function_SP_model(sigma,r,Delta_p,nclones,prop_s,t_max,N_max)
 % Simulations of the two compartment SP model, where a population of self-r
 % enewing stem cells (S) that produce self-renewing progenitors (P).
 % Supplemental Note Eq. (1)
@@ -114,8 +118,6 @@ function clone_info = function_SP_model(sigma,r,Delta_p,nclones,prop_s,t_max,N_m
 % t_max   : Maximum simulation time (equated to the chase time)
 % N_max   : Upper bound to the total number of particles S+P in the system,
 %           can be set to Inf.
-% ignore_singlets : If 1, clones of size n<2 are nos considered towards the
-%                   total clone count.
 %
 % A single realisation terminates if t_max or N_max are reached, or if the
 % total particle count S+P is zero.
@@ -130,11 +132,6 @@ function clone_info = function_SP_model(sigma,r,Delta_p,nclones,prop_s,t_max,N_m
 % -------------------------------------------------------------------------
 clone_sizes = zeros(nclones,5); % initialize array to store results
 rep = 0;
-if ignore_singlets == 1
-    min_clone_size = 2;
-else
-    min_clone_size = 1;
-end
 while rep < nclones % run until Nreps clones are recorded
     % initial condition:
     if rep <= prop_s*nclones
@@ -169,7 +166,7 @@ while rep < nclones % run until Nreps clones are recorded
         end  
     end
    
-    if (numS + numP) >= min_clone_size % if the clone is "proliferative"
+    if (numS + numP) > 0 % if the clone is "alive"
         % store clone size, and initial condition information
         rep = rep + 1;
         clone_sizes(rep,:) = [t, numS_init, numP_init, numS, numP];
