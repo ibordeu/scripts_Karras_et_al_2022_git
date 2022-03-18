@@ -27,8 +27,8 @@ n_realis = 10000; % to speed up, lower this number to 1000 or 100;
 pvalues = [];
 for nsample = samples
     figure;
-    all_sim_clone_sizes = [];
     for nchannel = channels
+        all_sim_clone_sizes = [];
         clones = clone_sizes{nsample,nchannel};
         if ignore_singlets == 1
             clones(clones == 1) = [];
@@ -38,9 +38,12 @@ for nsample = samples
         params = result_table(2*nsample-1 + nchannel-1,:);
         t0 = params.t0;
         r = params.r;
+        factor = (2*r-1)/r;
         sigma = params.sigma;
         Delta_p =  params.Delta_p;
-        fsp =  params.fsp;
+        fs =  params.fs;
+        n0int =  params.n0int;
+% %         fs = n0int/factor;
         % Run numerical simulations and plot the result for each channel in
         % a separate subplot
         subplot(1,length(channels),nchannel)
@@ -49,9 +52,12 @@ for nsample = samples
         % run n_realis realizations
         for n = 1:n_realis
             % each realisation simulates nclones clones
-            clone_info = function_SP_model(sigma,r,Delta_p,nclones,fsp,t0,N_max,ignore_singlets);
+            clone_info = function_SP_model(sigma,r,Delta_p,nclones,fs,t0,N_max,0);
             % clone size = number of S cells + number of P cells in clone
             sim_clones_size = clone_info.numS + clone_info.numP;
+            if ignore_singlets == 1
+                sim_clones_size(sim_clones_size == 1) = [];
+            end
             % construct cdf for every realisation
             [~,cumNsim,bincents] = cumulativeProb(sim_clones_size,binedges);
             cumNsims(n,:) = cumNsim;
@@ -59,8 +65,8 @@ for nsample = samples
             all_sim_clone_sizes = [all_sim_clone_sizes;sim_clones_size]; 
         end
         % plot numerical cdf (average +/- SD) 
-        cdfMean = mean(cumNsims,1); cdfspD = std(cumNsims,[],1);
-        errorbar(bincents,cdfMean,cdfspD,'Color',[0.9 0.9 0.9],'HandleVisibility','off')
+        cdfMean = mean(cumNsims,1); cdfSD = std(cumNsims,[],1);
+        errorbar(bincents,cdfMean,cdfSD,'Color',[0.9 0.9 0.9],'HandleVisibility','off')
         hold on
         plot(bincents,mean(cumNsims,1),'-','Color',[0.7 0.7 0.7])
         % plot empirical cdf
@@ -85,8 +91,8 @@ for nsample = samples
 end
 % store p-value in the result_table and update it (save).
 result_table.pvalues = pvalues;
-save('result_table.mat','result_table')
-
+% save('result_table.mat','result_table')
+% disp('p-values added to result_table.mat')
 %% Functions
 function clone_info = function_SP_model(sigma,r,Delta_p,nclones,prop_s,t_max,N_max,ignore_singlets)
 % Simulations of the two compartment SP model, where a population of self-r
@@ -114,7 +120,7 @@ function clone_info = function_SP_model(sigma,r,Delta_p,nclones,prop_s,t_max,N_m
 % t_max   : Maximum simulation time (equated to the chase time)
 % N_max   : Upper bound to the total number of particles S+P in the system,
 %           can be set to Inf.
-% ignore_singlets : If 1, clones of size n<2 are nos considered towards the
+% ignore_singlets : If 1, clones of size n<2 are not considered towards the
 %                   total clone count.
 %
 % A single realisation terminates if t_max or N_max are reached, or if the

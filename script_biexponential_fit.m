@@ -17,6 +17,9 @@ clone_sizes = read_spreadsheet('clone_sizes.xlsx',samples,channels);
 % we provide the chase times:
 chase_time = [30,25,35,70,70]; % days
 empirical_tumour_expansion = [10.2, 7.8, 10.8, 14.1, 9.8];
+% fix a value of the duplication probability, r, to break the fit
+% degeneracy, the value must be larger that 1/2 and lower than 1
+r = 0.75;
 % Optional flag
 % ignore_singlets : to ignore single cell clones, set to 1.  0 to keep them.
 % Singles are ignored to consider only clones that originated from cells
@@ -27,13 +30,15 @@ show_plots = 1;
 %- SCRIPT ----------------------------------------------------------------%
 % preallocate result table of parameters
 variables = {'sample','channel','t0','num_clones','num_singlets',...
-    'size_threshold','p0p','nbar','nbar_p','r','sigma','Delta_s',...
-    'Delta_p','fsp','fs','predicted_tumour_volume','empirical_tumour_expansion','R2','S'};
+    'size_threshold','n0int','nbar','nbar_p','r','sigma','Delta_s',...
+    'Delta_p','fs','predicted_tumour_volume','empirical_tumour_expansion',...
+    'iT1_mT1','R2','S'};
 result_table = array2table(zeros(length(samples)*length(channels),...
     length(variables)),'VariableNames',variables);
 channel_labels = {'RFP','YFP'};
 % run the analysis on each sample
 counter = 0;
+sensitivity_r = {}; dDelta_s = []; dsigma = []; dfs = [];
 for nsample = samples
     if show_plots == 1
         figure;
@@ -57,10 +62,10 @@ for nsample = samples
         % Fit the biexponential model, Eq. (10), using the  value for
         % size_threshold found in the previous step, and extract the
         % parameters: nbar,nbar_p and p0p
-        [gof,nbar,nbar_p,p0p] = fit_biexponential(sample_clones,size_threshold_min,ignore_singlets);
+        [gof,nbar,nbar_p,n0int,T1p] = fit_biexponential(sample_clones,size_threshold_min,ignore_singlets);
         % obtain the empirical and theoretical cdfs
         [emp_cdf,bincents] = empirical_cdf(sample_clones,show_plots,nchannel);
-        Cn = theoretical_cdf(nbar,nbar_p,p0p,ignore_singlets,show_plots);
+        Cn = theoretical_cdf(nbar,nbar_p,n0int,ignore_singlets,show_plots);
         % compute the goodness-of-fit measures: R2,S
         [R2,S] = gof_estimation(bincents,emp_cdf,Cn);
         
@@ -77,37 +82,45 @@ for nsample = samples
         result_table.num_singlets(counter) = num_singlets;
         % optimal clone size threshold
         result_table.size_threshold(counter) = size_threshold_min;
-        % fitted parameters p0p = p0/(1-s(t)), nbar and nbar_p
-        result_table.p0p(counter) = p0p;
+        % fitted parameters; n=0 intersect p0/(1-s(t)), nbar and nbar_p
+        result_table.n0int(counter) = n0int; % p0/(1-s(t))
         result_table.nbar(counter) = nbar;
         result_table.nbar_p(counter) = nbar_p;
         % we now estimate other model parameters based on the theoretical
         % expression described in the "Model fits" section
-        % first we fix a value of the duplication probability, r.
-        r = 0.75; factor = (2*r-1)/r;
+        % calculate r-dependent parameters
+        [Delta_s,sigma,fs,V] = estimate_remaining_parameters(r,t0,nbar,nbar_p,n0int,T1p);
+        % SC cycling rate
         result_table.r(counter) = r;
         % stem cell expansion rate
-        Delta_s = (1/t0)*log(factor^2*nbar);
         result_table.Delta_s(counter) = Delta_s;
         % stem cell cycling rate
-        sigma = Delta_s/(2*r-1);
         result_table.sigma(counter) = sigma;
         % stem cell expansion rate
         Delta_p = log(nbar_p)/t0;
         result_table.Delta_p(counter) = Delta_p;
-        % fraction fo induces stem cells
-        fsp = p0p/factor;
-        result_table.fsp(counter) = fsp;
-        fs = fsp*(1-num_singlets/num_clones); % from fsp = fs/(1-S(t)) 
+        % T1p being the n=1 intersect of the small clone exponential decay
         result_table.fs(counter) = fs;
+        % infered T1 - measured T1
+        result_table.iT1_mT1(counter) = num_singlets/num_clones - T1p;
         % tumor volume, Eq. (11)
-        V = tumour_volume_SP_model(r,nbar,nbar_p,fs);
         result_table.predicted_tumour_volume(counter) = V;
         % empirical_tumour_expansion
         result_table.empirical_tumour_expansion(counter) = empirical_tumour_expansion(nsample);
         % goodness-of-fit estimates
         result_table.R2(counter) = R2;
         result_table.S(counter) = S;
+        % -- Study sensitivity to variations of "r"
+        rcounter = 0;
+        for rvals = 0.6:0.01:1
+            rcounter = rcounter + 1;
+            [Delta_s,sigma,fs,~] = estimate_remaining_parameters(rvals,t0,nbar,nbar_p,n0int,T1p);
+            sensitivity_r{nsample,nchannel}(rcounter,:) = [rvals,Delta_s,sigma,fs];
+        end
+        % lets calculate the relative deviation of Delta_s,sigma,fs given a
+        % variation of 10% in the value of r
+        r_range = [0.75,0.9]; % 10% around 0.75
+        [dDelta_s(end+1,1),dsigma(end+1,1),dfs(end+1,1)] = variation_of_parameters(r,r_range,t0,nbar,nbar_p,n0int,T1p);
         % -----------------------------------------------------------------
         mincdf = min([mincdf,emp_cdf(emp_cdf>0)]);
     end
@@ -124,6 +137,46 @@ for nsample = samples
         set(gcf,'color','w');
     end
 end
+%%
+% calculate and show average deviation of the parameters
+mean([dDelta_s,dsigma,dfs],1)
+
+if show_plots == 1 % plot sensitivity to variations of "r"
+    figure;
+    r_ref = 0.75;
+    legs = {}; 
+    markers = {'o','s','^','v','x'}; lstyle = {'-','--'};
+    for nsample = samples
+        for nchannel = channels
+            [c,~] = candm(nchannel);
+            rs = sensitivity_r{nsample,nchannel}(:,1);
+            mls = [lstyle{nchannel},markers{nsample}];
+            % plot SC expansion rate
+            subplot(1,3,1); hold on
+            plot(rs,sensitivity_r{nsample,nchannel}(:,2),mls,'Color',c); 
+            add_vref_line(r_ref); hold off;
+            xlabel('SC duplication Prob. (r)'); ylabel('SC expansion rate (\Delta_s)'); 
+            xlim([min(rs),max(rs)]);
+            % plot SC cycling rate
+            subplot(1,3,2); hold on
+            plot(rs,sensitivity_r{nsample,nchannel}(:,3),mls,'Color',c); 
+            add_vref_line(r_ref); hold off;
+            xlabel('SC duplication Prob. (r)'); ylabel('SC cycling rate (\sigma)'); 
+            xlim([min(rs),max(rs)]); 
+            % plot SC fraction 
+            subplot(1,3,3); hold on
+            plot(rs,sensitivity_r{nsample,nchannel}(:,4),mls,'Color',c); 
+            add_vref_line(r_ref); hold off;
+            xlabel('SC duplication Prob. (r)'); ylabel('SC fraction (f_S)'); 
+            xlim([min(rs),max(rs)]);
+            set(gcf,'color','w');
+            
+            legs{end+1} = ['S',num2str(nsample),'-',channel_labels{nchannel}];
+        end
+    end
+    legend(legs); legend boxoff
+end
+%%
 % save results
 save('result_table.mat','result_table')
 disp('Data saved as result_table.mat')
@@ -137,7 +190,7 @@ function [size_threshold_min, gof] = minimize(clone_sizes,ignore_singlets)
 [size_threshold_min, gof] = fminbnd(@(size_threshold) fit_biexponential(clone_sizes,size_threshold,ignore_singlets),1,50);
 end
 
-function [gof,nbar,nbar_p,p0p,bincents] = fit_biexponential(clone_sizes,size_threshold,ignore_singlets)
+function [gof,nbar,nbar_p,p0p,T1,bincents] = fit_biexponential(clone_sizes,size_threshold,ignore_singlets)
     % ---------------------------------------------------------------------
     % This function fits the bi-exponential CDF function to the empirical
     % data as described in the "Model fits" section of the supplementary
@@ -186,6 +239,7 @@ function [gof,nbar,nbar_p,p0p,bincents] = fit_biexponential(clone_sizes,size_thr
     [c_short] = lsqcurvefit(exp_fun, x0, bincents_short, cdf_short,lb,ub);
     % evaluate exponential function with the fitted parameters
     y_short = exp_fun(c_short,bincents_short);
+    T1 = 1-y_short(1); % y_short(1) corresponds to the Prob. that a clone has than 1 cell.
     % ---------------------------------------------------------------------
     % extract nbar_p
     nbar_p = c_short(2);
@@ -208,14 +262,14 @@ function [R2,S] = gof_estimation(bincents,emp_cdf,theo_cdf)
     S = sqrt(Sres/length(bincents));
 end
 
-function Cn = theoretical_cdf(nbar,nbar_p,p0p,ignore_singlets,show_plot)
+function Cn = theoretical_cdf(nbar,nbar_p,n0int,ignore_singlets,show_plot)
     % Here we contuct the theoretical cdf based on the input parameters
     % nbar, nbar_p and p0p.
     % If ignore_singlets == 1, then T{n<2} is removed from Tn(t).
     % provide range of clone sizes to evaluate
     bincents = 0.5:1:10^5;
     % compute T(n), Eq. (10), and normalize
-    Tn = @(xi) p0p*exp(-xi./nbar)./nbar+(1-p0p)*exp(-xi./nbar_p)./nbar_p;
+    Tn = @(xi) n0int*exp(-xi./nbar)./nbar+(1-n0int)*exp(-xi./nbar_p)./nbar_p;
     if ignore_singlets == 1
         Tn_list = Tn(bincents)/(1-sum(Tn(0:1)));
     else
@@ -263,8 +317,37 @@ c = cols{n};
 m = mkrs{n};
 end
 
+function [Delta_s,sigma,fs,V] = estimate_remaining_parameters(r,t0,nbar,nbar_p,n0int,T1p)
+% calculate parameters for a given value of "r":
+factor = (2*r-1)/r;
+% stem cell expansion rate
+Delta_s = (1/t0)*log(factor^2*nbar);
+% stem cell cycling rate
+sigma = Delta_s/(2*r-1);
+% T1p being the n=1 intersect of the small clone exponential decay
+fs = n0int*(1-T1p)/factor; % from fsp = fs/(1-s(t))
+% tumor volume, Eq. (11)
+V = tumour_volume_SP_model(r,nbar,nbar_p,fs);
+end
+
 function V = tumour_volume_SP_model(r,nbar,nbar_p,fs)
 % calculate tumour volume from fitted parameters nbar,nbar_p,fs, using the
 % fixed value of r, Eq. (11):
 V = fs*(2*r-1)/r*nbar + (1-(2*r-1)/r*fs)*nbar_p;
+end
+
+function add_vref_line(x)
+ys = ylim();
+xs = [x,x];
+plot(xs,ys,'k--','HandleVisibility','off')
+end
+
+function [dDelta_s,dsigma,dfs] = variation_of_parameters(r,r_range,t0,nbar,nbar_p,n0int,T1p)
+[Delta_s,sigma,fs,~] = estimate_remaining_parameters(r,t0,nbar,nbar_p,n0int,T1p);
+[Ds_sup,s_sup,fs_sup,~] = estimate_remaining_parameters(r_range(1),t0,nbar,nbar_p,n0int,T1p);
+[Ds_inf,s_inf,fs_inf,~] = estimate_remaining_parameters(r_range(2),t0,nbar,nbar_p,n0int,T1p);
+% relative deciation
+dDelta_s = abs(Ds_sup-Ds_inf)/Delta_s;
+dsigma = abs(s_sup-s_inf)/sigma;
+dfs = abs(fs_sup-fs_inf)/fs;
 end
