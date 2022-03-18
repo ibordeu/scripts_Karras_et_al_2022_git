@@ -1,4 +1,4 @@
-# A developmental cellular hierarchy in melanoma uncouples growth and metastatic phenotypes. Karras et al. Nature (2022), In revision.
+# A developmental cellular hierarchy in melanoma uncouples growth and metastatic phenotypes. Karras et al.
 Scripts used in the data analysis of the clone size distribution using a two-compartment model. 
 
 # To run the scripts:
