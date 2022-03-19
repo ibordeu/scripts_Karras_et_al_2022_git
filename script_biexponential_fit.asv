@@ -115,7 +115,7 @@ for nsample = samples
         result_table.S(counter) = S;
         % -- Study sensitivity to variations of "r"
         rcounter = 0;
-        for rvals = 0.6:0.01:1
+        for rvals = 0.6:0.1:1
             rcounter = rcounter + 1;
             [Delta_s,sigma,fs,~] = estimate_remaining_parameters(rvals,t0,nbar,nbar_p,n0int,T1p);
             sensitivity_r{nsample,nchannel}(rcounter,:) = [rvals,Delta_s,sigma,fs];
@@ -346,7 +346,7 @@ end
 function add_vref_line(x)
 ys = ylim();
 xs = [x,x];
-plot(xs,[0,ys(2)],'k--','HandleVisibility','off')
+plot(xs,[0,ys,'k--','HandleVisibility','off')
 end
 
 function [dDelta_s,dsigma,dfs] = variation_of_parameters(r,r_range,t0,nbar,nbar_p,n0int,T1p)
