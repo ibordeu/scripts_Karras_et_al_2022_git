@@ -24,7 +24,7 @@ N_max = Inf;
 n_realis = 10000; % to speed up, lower this number to 1000 or 100;
 
 % We run through each dataset and run 100 repeats of the
-pvalues = [];
+h_and_p_values = [];
 for nsample = samples
     figure;
     for nchannel = channels
@@ -83,14 +83,15 @@ for nsample = samples
         legend({'model','data'}); legend boxoff
         % perform KS-test between empirical and numerical distribution of
         % clones sizes.
-        [~,p] = kstest2(all_sim_clone_sizes,clones);
-        pvalues(end+1,1) = p;
+        [h,p] = kstest2(all_sim_clone_sizes,clones);
+        h_and_p_values(end+1,:) = [h,p];
     end
     suptitle(['Sample ',num2str(nsample)])
     set(gcf,'color','w');
 end
 % store p-value in the result_table and update it (save).
-result_table.pvalues = pvalues;
+result_table.h = h_and_p_values(:,1);
+result_table.pvalues = h_and_p_values(:,2);
 % save('result_table.mat','result_table')
 % disp('p-values added to result_table.mat')
 %% Functions
