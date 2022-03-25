@@ -1,7 +1,8 @@
-# A developmental cellular hierarchy in melanoma uncouples growth and metastatic phenotypes. Karras et al.
+# A developmental cellular hierarchy in melanoma uncouples growth and metastatic phenotypes. 
+### Karras et al.
 Scripts used in the data analysis of the clone size distribution using a two-compartment model. 
 
-# To run the scripts:
+### To run the scripts:
 1) Make sure you have installed Matlab (some toolboxes, such as the Optimization tooldbox might be required) 
 2) Download the files in the repository and put them all in the same folder
 Note: script_simulation_SP_model.m uses as Input the results table produced by the script_biexponential_fit.m script.
