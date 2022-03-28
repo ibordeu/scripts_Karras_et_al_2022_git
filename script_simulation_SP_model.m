@@ -1,7 +1,7 @@
 %%-----------------------------------------------------------------------%%
 % This script loads the clone sizes and output from script_biexponential_fit
-% (summarised in Table 4), and uses those parameters to run stochastic 
-% simulations of the two-compartment SP model. 
+% (summarised in Supplemenray Tables 5), and uses those parameters to run 
+% stochastic simulations of the two-compartment SP model. 
 % This script produces plots comparing the empirical cumulative distribution 
 % of clone sizes with the obtained from the numerical results (Extended data
 % Figure 5f-j). 
@@ -22,7 +22,7 @@ ignore_singlets = 1;
 %
 N_max = Inf;
 n_realis = 10000; % to speed up, lower this number to 1000 or 100;
-
+%
 % We run through each dataset and run 100 repeats of the
 h_and_p_values = [];
 for nsample = samples

@@ -7,7 +7,7 @@
 % described in the "Model fits" section.
 %
 % In this script we generate:
-% Figure 2F, Supplementary Figures 5b-5f, and Tables 3-4.
+% Figure 2F, Supplementary Figures 5b-5f, and Supplemenraty Tables 4 and 5.
 %%-----------------------------------------------------------------------%%
 close all; clear all; clc;
 %-DATA AND PARAMETERS-----------------------------------------------------%
